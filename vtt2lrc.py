@@ -5,7 +5,7 @@ output_folder = "*"
 
 # Output File Name, use "{regex}" to use regex expression on the input file name(including original extension)
 # If you need to use "{" or "}" in the output file name, use "\" or "/" instead
-output_file_name = r"{^.*?(?=(\.[0-9a-z]*)?\.vtt$)}.lrc"
+output_file_name = r"{^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)}.lrc"
 
 # Output File Encoding
 output_file_encoding = "utf-8"
