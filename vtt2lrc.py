@@ -3,9 +3,10 @@
 # Output Folder, use "*" to use the same folder as the input file
 output_folder = "*"
 
-# Output File Name, use "{regex}" to use regex expression on the input file name(including original extension)
-# If you need to use "{" or "}" in the output file name, use "\" or "/" instead
-output_file_name = r"{^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)}.lrc"
+# Output File Name, use "/rREGEX/r" to use regex expression on the input file name(including original extension)
+# if you want to use "/" in the regex, use "//" to escape it
+# output_file_name = r"/r^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)/r.lrc"
+output_file_name = r"/r^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)/r.lrc"
 
 # Output File Encoding
 output_file_encoding = "utf-8"
@@ -28,12 +29,17 @@ ignore_end_time = False
 # If overwrite=False, the script will add "_" to the file name
 overwrite = True
 
+# Don't check the extension of the input file
+check_extension = True
+
 # End of configuration
 
 # ------ import ------
 import re
 from pathlib import Path
-
+import os
+import sys
+import platform
 
 # ------ functions ------
 
@@ -57,27 +63,71 @@ def get_non_duplicate_file_name(folder: Path, file_name: str) -> str:
     return new_path.name
 
 
+def match_reg(reg, text):
+    match = re.match(reg, text)
+    if match:
+        return match.group()
+    else:
+        return ""
+
+
+def check_file_name(name: str) -> bool:
+    # 简单检查文件名是否合法
+    illegal_char = "/"
+    os_name = platform.system()
+    if os_name == "Windows":
+        illegal_char = r"\/:*?\"<>|"
+    elif os_name == "Linux":
+        illegal_char = "/"
+    elif os_name == "Darwin":
+        illegal_char = ":"
+
+    for c in illegal_char:
+        if c in name:
+            return False
+    return True
+
+
 def get_output_file_name(input_file_path: Path) -> str:
     file_name_origin = input_file_path.name
     text = ""
+    pre_scan = False
     scan = False
     reg = ""
     for c in output_file_name:
-        if c == "{":
-            scan = True
-        elif c == "}":
-            scan = False
-            match = re.match(reg, file_name_origin)
-            if match:
-                text += match.group()
+        if c == "/" and pre_scan:
+            # 转义成纯文本的/字符
+            if scan:
+                reg += c
+            else:
+                text += c
+            pre_scan = False
+        elif c == "/" and not pre_scan:
+            pre_scan = True
+        elif c == "r" and pre_scan:
+            # /r代表正则表达式开始或结束
+            scan = not scan
+            if not scan:
+                # 正则表达式结束
+                text += match_reg(reg, file_name_origin)
+                reg = ""
+            pre_scan = False
+        elif pre_scan:
+            # 无效的转义动作，出现解析语法问题
+            raise Exception(f"There's a SYNTAX ERROR in output_file_name configuration: {output_file_name}\n"
+                            f"'/{c}' is not a valid escape action.")
         elif scan:
+            # 正在扫描正则表达式
             reg += c
-        elif c == "\\":
-            text += "{"
-        elif c == "/":
-            text += "}"
         else:
             text += c
+
+    if scan:
+        raise Exception(f"There's a SYNTAX ERROR in output_file_name configuration: {output_file_name}\n"
+                        f"Regex escape '/r' not ended. (/rREGEX/r)")
+
+    if not check_file_name(text):
+        raise Exception(f"Output file name is illegal: {text}")
 
     text = get_non_duplicate_file_name(get_output_folder(input_file_path), text)
     return text
@@ -203,7 +253,7 @@ def main(args):
             log_error(f"{path.name} is a directory, ignored.")
         elif path.stat().st_size > 4 * 1024 * 1024:
             log_error(f"{path.name} is too large (>4MB), ignored.")
-        elif path.suffix != ".vtt":
+        elif path.suffix != ".vtt" and check_extension:
             log_error(f"{path.name} is not a vtt file, ignored.\nIf it is, please rename it to {path.name}.vtt")
         else:
             try:
@@ -213,9 +263,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    import sys
-
     main(sys.argv[1:])
     if has_error:
         input("Press Enter to exit")
-
