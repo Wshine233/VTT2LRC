@@ -32,6 +32,12 @@ overwrite = True
 # Don't check the extension of the input file
 check_extension = True
 
+# If True, the script will convert all vtt files in the input folder recursively
+recursion = True
+
+# If True, the script will print the ignored files at the end of the process
+log_ignored_files = False
+
 # End of configuration
 
 # ------ import ------
@@ -41,9 +47,45 @@ import os
 import sys
 import platform
 
-# ------ functions ------
-
+# ------ status ------
 has_error = False
+ignore_list = []
+parent_folder = Path()
+version = "1.10"
+
+
+def log_error(error: str):
+    global has_error
+    has_error = True
+    print(f"[ERROR] {error}")
+    print()
+
+
+def add_ignore(path: Path, reason: str, log: bool):
+    global ignore_list
+    global parent_folder
+    path = path.absolute()
+    if path.is_relative_to(parent_folder):
+        path = path.relative_to(parent_folder)
+
+    ignore_list.append((path, reason))
+    if log:
+        log_error(f"{path.name} ignored: {reason}")
+
+
+def print_ignore_list():
+    global ignore_list
+    global has_error
+    has_error = True
+    ignore_list.sort(key=lambda x: str(x[0]))
+    print(f"------ Ignored Files ------")
+    for path, reason in ignore_list:
+        print(f"{path}: {reason}")
+        print()
+    print()
+
+
+# ------ functions ------
 
 
 def get_output_folder(input_file_path: Path) -> Path:
@@ -187,13 +229,6 @@ class VTT:
         self.text = text
 
 
-def log_error(error: str):
-    global has_error
-    has_error = True
-    print(f"[ERROR] {error}")
-    print()
-
-
 def parse_vtt(vtt_text: str) -> list[VTT]:
     vtt_list = []
     vtt_obj = None
@@ -230,7 +265,7 @@ def vtt2lrc(input_file_path: Path):
     output_path = get_output_folder(input_file_path).joinpath(output_name)
 
     vtt_text = read_vtt(input_file_path)
-    lrc_text = "[by:IceFoxy]\n[re:VTT to LRC]\n[ve:1.00]\n\n"
+    lrc_text = f"[by:IceFoxy]\n[re:VTT to LRC]\n[ve:{version}]\n\n"
     for vtt in parse_vtt(vtt_text):
         lrc_text += f"[{vtt.time_start.to_lrc_str()}]{vtt.text}\n"
         if not ignore_end_time:
@@ -239,30 +274,81 @@ def vtt2lrc(input_file_path: Path):
     write_to_file(output_path, lrc_text)
 
 
-def main(args):
-    if len(args) == 0:
-        print("Please drag and drop the vtt file(s) to this script")
-        input("Press Enter to exit")
-        return
+def try_vtt2lrc(input_file_path: Path, log: bool):
+    try:
+        vtt2lrc(input_file_path)
+    except Exception as e:
+        add_ignore(input_file_path, f"Failed to convert: {e}", log)
 
+
+def check_vtt(path: Path, log: bool) -> bool:
+    if not path.exists():
+        err_msg = f"File does not exist."
+    elif path.is_dir():
+        err_msg = f"File is a directory."
+    elif check_extension and path.suffix != ".vtt":
+        err_msg = f"Not a '.vtt' file."
+    elif path.stat().st_size > 4 * 1024 * 1024:
+        err_msg = f"Too large (>4MB)."
+    else:
+        return True
+
+    add_ignore(path, err_msg, log)
+    return False
+
+
+def main_recursive(path_list: list[str]) -> int:
+    if not check_extension:
+        print(f"**Warning: check_extension is set to False, this will cause the script to try to process ALL FILES in "
+              f"the folders.**")
+
+    queue = list(map(lambda x: Path(x), path_list))
+    file_cot = 0
+    while len(queue) > 0:
+        path = queue.pop()
+        file_cot += 1
+        if path.is_dir():
+            # 扫描的文件夹不算入文件数
+            file_cot -= 1
+            for sub_path in path.iterdir():
+                queue.append(sub_path)
+        elif check_vtt(path, False):
+            try_vtt2lrc(path, True)
+
+    return file_cot
+
+
+def main(args: list[str]) -> int:
+    file_cot = 0
     for arg in args:
+        file_cot += 1
         path = Path(arg)
-        if not path.exists():
-            log_error(f"{path.name} does not exist, ignored.")
-        elif path.is_dir():
-            log_error(f"{path.name} is a directory, ignored.")
-        elif path.stat().st_size > 4 * 1024 * 1024:
-            log_error(f"{path.name} is too large (>4MB), ignored.")
-        elif path.suffix != ".vtt" and check_extension:
-            log_error(f"{path.name} is not a vtt file, ignored.\nIf it is, please rename it to {path.name}.vtt")
-        else:
-            try:
-                vtt2lrc(Path(arg))
-            except Exception as e:
-                log_error(f"{path.name} failed to convert, ignored.\n{e}")
+        if check_vtt(path, True):
+            try_vtt2lrc(path, True)
+    return file_cot
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    if len(sys.argv) < 2:
+        print("Please drag and drop the vtt file(s) to this script")
+        input("Press Enter to exit")
+        exit(0)
+
+    file_count = 0
+    try:
+        parent_folder = Path(sys.argv[1]).parent.absolute()
+        if recursion:
+            file_count = main_recursive(sys.argv[1:])
+        else:
+            file_count = main(sys.argv[1:])
+    except Exception as e:
+        log_error(f"Unexpected error occurred: {e}")
+
+    if len(ignore_list) > 0 and log_ignored_files:
+        print_ignore_list()
+    print("Done!")
+    print(f"Total files: {file_count}  Ignored: {len(ignore_list)}")
+    print()
+
     if has_error:
         input("Press Enter to exit")
