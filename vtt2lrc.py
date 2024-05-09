@@ -6,7 +6,7 @@ output_folder = "*"
 # Output File Name, use "/rREGEX/r" to use regex expression on the input file name(including original extension)
 # if you want to use "/" in the regex, use "//" to escape it
 # output_file_name = r"/r^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)/r.lrc"
-output_file_name = r"/r^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.vtt$)/r.lrc"
+output_file_name = r"/r^.*?(?=(\.(wav|mp3|wmv|aac|flac|ape|aif|ogg))?\.(vtt|srt)$)/r.lrc"
 
 # Output File Encoding
 output_file_encoding = "utf-8"
@@ -51,7 +51,7 @@ import platform
 has_error = False
 ignore_list = []
 parent_folder = Path()
-version = "1.10"
+version = "1.20"
 
 
 def log_error(error: str):
@@ -208,13 +208,18 @@ class Time:
 
 def parse_time(time_str: str) -> Time:
     time_str = time_str.strip()
+    sep = "."
+    if time_str.find(sep) == -1:
+        sep = ","
+
     hour = int(time_str[0:time_str.find(":")])
     time_str = time_str[time_str.find(":") + 1:]
     minute = int(time_str[0:time_str.find(":")])
     time_str = time_str[time_str.find(":") + 1:]
-    second = int(time_str[0:time_str.find(".")])
-    time_str = time_str[time_str.find(".") + 1:]
+    second = int(time_str[0:time_str.find(sep)])
+    time_str = time_str[time_str.find(sep) + 1:]
     millisecond = int(time_str)
+
     return Time(hour, minute, second, millisecond)
 
 
@@ -236,7 +241,8 @@ def parse_vtt(vtt_text: str) -> list[VTT]:
         if line.strip() == "":
             continue
         if line.strip() != "WEBVTT":
-            return []
+            # return []
+            break
         else:
             break
 
@@ -286,8 +292,8 @@ def check_vtt(path: Path, log: bool) -> bool:
         err_msg = f"File does not exist."
     elif path.is_dir():
         err_msg = f"File is a directory."
-    elif check_extension and path.suffix != ".vtt":
-        err_msg = f"Not a '.vtt' file."
+    elif check_extension and path.suffix != ".vtt" and path.suffix != ".srt":
+        err_msg = f"Not a '.vtt' or '.srt' file."
     elif path.stat().st_size > 4 * 1024 * 1024:
         err_msg = f"Too large (>4MB)."
     else:
