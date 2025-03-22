@@ -1,5 +1,9 @@
 # ------ Configuration ------
 
+# Keep WATERMARK (Show software information at the top of the lrc file)
+# 是否保留开头水印和软件信息
+keep_watermark = False
+
 # Output Folder, use "*" to use the same folder as the input file
 output_folder = "*"
 
@@ -51,7 +55,7 @@ import platform
 has_error = False
 ignore_list = []
 parent_folder = Path()
-version = "1.20"
+version = "1.3"
 
 
 def log_error(error: str):
@@ -271,7 +275,7 @@ def vtt2lrc(input_file_path: Path):
     output_path = get_output_folder(input_file_path).joinpath(output_name)
 
     vtt_text = read_vtt(input_file_path)
-    lrc_text = f"[by:IceFoxy]\n[re:VTT to LRC]\n[ve:{version}]\n\n"
+    lrc_text = f"[re:VTT to LRC]\n[ve:{version}]\n\n" if keep_watermark else ""
     for vtt in parse_vtt(vtt_text):
         lrc_text += f"[{vtt.time_start.to_lrc_str()}]{vtt.text}\n"
         if not ignore_end_time:
